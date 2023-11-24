@@ -53,11 +53,12 @@ jobs:
           script: |
             const fs = require('fs');
             const branch = `update-${new Date().getTime()}`;
+            const ref = `refs/heads/${branch}`;
 
             await github.rest.git.createRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              ref: `refs/heads/${branch}`,
+              ref,
               sha: context.sha
             });
 
@@ -69,14 +70,15 @@ jobs:
 
             const file = await github.rest.repos.getContent({
               ...fileOptions,
-              ref: `refs/heads/${branch}`
+              ref
             });
 
-            const res = await github.rest.repos.createOrUpdateFileContents({
+            await github.rest.repos.createOrUpdateFileContents({
               ...fileOptions,
               message: 'Update tld.h',
               content: Buffer.from(fs.readFileSync('hs-names/build/tld.h')).toString('base64'),
               sha: file.data.sha,
+              branch,
               committer: {
                 name: '🤝',
                 email: 'github.bot@handshake.org'
