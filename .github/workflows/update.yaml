@@ -1,0 +1,77 @@
+name: Update
+
+on: workflow_dispatch
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup nodejs
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Checkout repository (hnsd)
+        uses: actions/checkout@v4
+        with:
+          path: hnsd
+
+      - name: Checkout repository (hs-names)
+        uses: actions/checkout@v4
+        with:
+          repository: handshake-org/hs-names
+          path: hs-names
+
+      - name: Install dependencies
+        run: npm --prefix=hs-names install
+
+      - name: Install dependencies (hsd)
+        run: npm --prefix=hs-names install hsd@^5
+
+      - name: tlds-alpha-by-domain.txt
+        uses: wei/wget@v1
+        with:
+          args: -O hs-names/data/tlds-alpha-by-domain.txt https://data.iana.org/TLD/tlds-alpha-by-domain.txt
+
+      - name: root.zone
+        uses: wei/wget@v1
+        with:
+          args: -O hs-names/data/root.zone https://www.internic.net/domain/root.zone
+
+      - name: Build
+        run: |
+          cd hs-names
+          # Workaround for https://github.com/chjj/bns/issues/41
+          sed -i '/ZONEMD/d' data/root.zone
+          ./zone.js
+          ./zone-build.js
+
+      - name: Commit/PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = `update-${new Date().getTime()}`;
+            await github.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/heads/${branch}`,
+              sha: context.payload.repository.head_commit.id
+            });
+
+            await github.repos.createOrUpdateFileContents({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: 'src/tld.h',
+              message: 'Update tld.h',
+              content: Buffer.from(fs.readFileSync('hs-names/build/tld.h')).toString('base64'),
+              branch
+            });
+
+            await github.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Update tld.h',
+              head: branch,
+              base: 'master'
+            });
